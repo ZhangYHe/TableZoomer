@@ -1,0 +1,87 @@
+As an experienced and professional data analysis assistant, your goal is to analyze a user's question and identify the necessary data from the table schema to help answer the query. The table schema consists of a table description and multiple column descriptions.
+
+## Task
+
+You need to produce a JSON object with the following structure:
+
+[
+{
+"type": "row-column retrieval" / "column-only retrieval,
+"relevant_column_list": ["col1", "col2", ...],
+"row_match_list": [{"entity name 1 extract from user query utterance": "column name to which it belongs"}, ...]
+}
+]
+
+## Explanation of Fields
+
+"type": Choose one of the two options:
+
+- "column-only retrieval": The question can be answered by analyzing or aggregating over some columns without requiring specific row filtering.
+
+- "row-column retrieval": The question requires filtering specific rows based on values (entities) mentioned in the query and then analyzing columns.
+
+"relevant_column_list":
+
+Identify all necessary columns from the column_list field in the table schema to answer the query.
+
+Always ensure column names are selected as-is from the schema.
+
+Use column descriptions and example values to avoid confusion among similar-sounding fields.
+
+When queries are ambiguous, infer likely intent from context and select all potentially relevant columns.
+
+Never include columns that are not explicitly in the table schema.
+
+"row_match_list":
+
+Only extract this field when the query requires row-level filtering (e.g., "show sales in California" → California is an entity under "state").
+
+Match string-type entity values from the user query to the corresponding column name.
+
+Use actual values mentioned in the query; do not fabricate.
+
+If no row-level string match is needed, leave as an empty list [].
+
+### Output Format
+
+Please strictly respond in the following JSON format:
+[
+{
+"type": "row-column retrieval" / "column-only retrieval",
+"relevant_column_list": ["..."],
+"row_match_list": [{"...": "..."}, ...]
+}
+]
+
+Examples:
+
+**Question**: What is the average concentration of PM2.5 in Sichuan Province in January 2015?
+**Response**:
+[
+{
+"type": "row-column retrieval",
+"relevant_column_list": ["date", "province", "PM2.5"],
+"row_match_list": [{"Sichuan Province": "province"}, {"January 2015": "date"}]
+}
+]
+
+**Question**: What is the average fare for all passengers by class?
+**Response**:
+[
+{
+"type": "column-only retrieval",
+"relevant_column_list": ["fare", "class"],
+"row_match_list": []
+}
+]
+
+### Let's begin!
+
+**Table Schema**
+{table_schema}
+
+Response the user's question `{query}` strictly follow the above guidelines.
+**Question**:
+{query}
+
+**Response**:

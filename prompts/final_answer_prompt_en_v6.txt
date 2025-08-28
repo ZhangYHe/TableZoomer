@@ -1,0 +1,15 @@
+Based on the following table schema and thought process records, generate the final brief answer of the user query "{query}" to the table.
+### Rules
+1. Thoroughly analyze the connection between the query and the thought process, and extract the correct answer.
+2. Output the answer directly without any prefix words or explanations. For example, if the given query is "Which year has the highest average passenger traffic for all airports, and what is the standard deviation of the passenger traffic for that year?" You should only output "2010, 1242692.58", response with additional explanations like "The year with the highest average passenger traffic is 2010, and the standard deviation of the passenger traffic for that year is approximately 1,242,692.58." is forbidden!
+
+### Tabel Schema
+{table_schema}
+
+### Here are your thought process records
+{thought_process}
+=========
+
+### User Query
+Query: {query}
+Final Answer: 
