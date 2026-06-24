@@ -5,6 +5,7 @@ Author: xiongsishi@chinatelecom.cn
 import ast
 import json
 import re
+import sys
 
 import fire
 import subprocess
@@ -127,7 +128,7 @@ class SimpleRunCode(Action):
             return json.dumps(code_results, ensure_ascii=False)
 
         try:
-            result = subprocess.run(["python3", "-c", code_text], capture_output=True, text=True, check=True, timeout=60)
+            result = subprocess.run([sys.executable, "-c", code_text], capture_output=True, text=True, check=True, timeout=60)
             code_result = result.stdout.strip()
             execute_state = result.returncode
             code_results = {
