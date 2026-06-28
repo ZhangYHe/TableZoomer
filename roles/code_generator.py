@@ -6,7 +6,7 @@ from actions.program_write import SimpleWriteCode, SimpleRunCode
 
 class CodeGenerator(Role):
     """ Assistant to generate and execute code. """
-    name: str = "TeleGenerator"
+    name: str = "TableZoomerGenerator"
     profile: str = "Code Generator"
     goal: str = "to generate and execute Python code to solve table-related queries"
 

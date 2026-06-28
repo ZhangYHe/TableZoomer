@@ -5,7 +5,7 @@ from actions.llm_actions import LLMGenerate
 
 
 class LLMChat(Role):
-    name: str = "TeleChat"
+    name: str = "TableZoomerChat"
     profile: str = "AI assistant"
 
     def __init__(self, llm_config, prompt_template, **kwargs):

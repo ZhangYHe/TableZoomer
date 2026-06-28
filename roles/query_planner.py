@@ -6,7 +6,7 @@ from actions.query_analyse import QueryExpansion
 
 class QueryPlanner(Role):
     """ Assistant to plan and analyze the query. """
-    name: str = "TelePlanner"
+    name: str = "TableZoomerPlanner"
     profile: str = "Query Planner"
     goal: str = "to deeply understand and carefully analyze user queries, and associate them with the information provided in the table"
 
@@ -26,4 +26,3 @@ class QueryPlanner(Role):
         msg = Message(content=result, role=self.profile, cause_by=type(todo))
         self.rc.memory.add(msg)  
         return msg
-

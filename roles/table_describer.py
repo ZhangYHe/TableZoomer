@@ -6,7 +6,7 @@ from actions.table_desc import TableDesc, get_refined_table_schema
 
 class TableDescriber(Role):
     """ Assistant to describe the table. """
-    name: str = "TeleDescriber"
+    name: str = "TableZoomerDescriber"
     profile: str = "Table Describer"
     goal: str = "to analyze and describe the structure and content of tables, providing comprehensive schema information"
 
@@ -26,4 +26,3 @@ class TableDescriber(Role):
         msg = Message(content=result, role=self.profile, cause_by=type(todo))
         self.rc.memory.add(msg)  
         return msg
-

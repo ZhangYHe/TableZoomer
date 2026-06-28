@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -23,6 +24,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--react_round", type=int, default=2)
     parser.add_argument("--output_path", required=True)
+    parser.add_argument("--task", default="default")
+    parser.add_argument("--use_cell_guided_zoom", action="store_true")
+    parser.add_argument("--no_question_rewrite", action="store_true")
+    parser.add_argument(
+        "--cell_retrieval_method",
+        default="bm25",
+        choices=["bm25", "hybrid", "embed"],
+    )
+    parser.add_argument("--top_k_cells", type=int, default=20)
+    parser.add_argument("--top_k_rows", type=int, default=10)
+    parser.add_argument("--top_k_cols", type=int, default=10)
+    parser.add_argument("--cell_index_cache_dir", default=str(PROJECT_ROOT / "cache" / "cell_index"))
+    parser.add_argument("--overwrite_cell_index_cache", action="store_true")
     return parser.parse_args()
 
 
@@ -82,6 +96,7 @@ def write_runtime_configs(runtime_dir: Path, model_name: str, api_key: str, base
                 f'  react: "{PROJECT_ROOT / "prompts/react_prompt_en_v4.txt"}"',
                 f'  table_desc: "{PROJECT_ROOT / "prompts/table_desc_prompt_en_v3.txt"}"',
                 f'  query_expansion: "{PROJECT_ROOT / "prompts/query_refine_en_v1.txt"}"',
+                f'  question_rewrite: "{PROJECT_ROOT / "prompts/question_rewrite_prompt.txt"}"',
                 f'  code_generation: "{PROJECT_ROOT / "prompts/code_generate_prompt_en_v11.txt"}"',
                 f'  answer_summary: "{PROJECT_ROOT / "prompts/final_answer_prompt_en_v5.txt"}"',
                 "",
@@ -105,6 +120,32 @@ def ensure_metagpt_root() -> None:
         runtime_root = str(Path.home() / ".metagpt" / "tablezoomer_runtime")
         os.environ["METAGPT_PROJECT_ROOT"] = runtime_root
     Path(runtime_root).mkdir(parents=True, exist_ok=True)
+
+
+def normalize_answer(value: object) -> str:
+    text = str(value).lower()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^0-9a-z\u4e00-\u9fff.]+", " ", text)
+    return text.strip()
+
+
+def is_correct_answer(prediction: str, gold_answer: object) -> bool:
+    if gold_answer is None:
+        return False
+
+    if isinstance(gold_answer, list):
+        gold_values = gold_answer
+    else:
+        gold_values = [gold_answer]
+
+    gold_norms = [normalize_answer(value) for value in gold_values if normalize_answer(value)]
+    pred_norm = normalize_answer(prediction)
+    if not gold_norms or not pred_norm:
+        return False
+
+    if pred_norm in gold_norms:
+        return True
+    return all(gold in pred_norm for gold in gold_norms)
 
 
 def main() -> None:
@@ -132,7 +173,23 @@ def main() -> None:
         config_file = write_runtime_configs(runtime_dir, args.model_name, api_key, base_url)
         schema_dir = runtime_dir / "table_schema"
         schema_dir.mkdir(parents=True, exist_ok=True)
-        agent = TableZoomer(config_file=str(config_file), max_react_round=args.react_round)
+        agent = TableZoomer(
+            config_file=str(config_file),
+            max_react_round=args.react_round,
+            use_cell_guided_zoom=args.use_cell_guided_zoom,
+            use_question_rewrite=not args.no_question_rewrite,
+            cell_retrieval_method=args.cell_retrieval_method,
+            top_k_cells=args.top_k_cells,
+            top_k_rows=args.top_k_rows,
+            top_k_cols=args.top_k_cols,
+            task=args.task,
+            cell_index_cache_dir=args.cell_index_cache_dir,
+            overwrite_cell_index_cache=args.overwrite_cell_index_cache,
+        )
+
+        correct: list[str] = []
+        incorrect: list[str] = []
+        halted: list[str] = []
 
         with output_path.open("w", encoding="utf-8") as output_file:
             for idx, item in enumerate(rows):
@@ -141,21 +198,37 @@ def main() -> None:
                 schema_key = item.get("id") or f"row_{idx}"
                 table_desc_file = schema_dir / f"{schema_key}.json"
                 result = dict(item)
+                trial = idx + 1
 
                 try:
-                    answer, log_item = agent.execute_qa(question, table_file, str(table_desc_file))
+                    answer, log_item = agent.execute_qa(
+                        question,
+                        table_file,
+                        str(table_desc_file),
+                        table_id=item.get("table_id"),
+                    )
                     result["response"] = answer
                     result["pred_answer"] = answer
                     result["log_item"] = log_item
                     result["execute_status"] = "success"
+                    if "answer" in item:
+                        if is_correct_answer(answer, item["answer"]):
+                            correct.append(schema_key)
+                        else:
+                            incorrect.append(schema_key)
                 except Exception as exc:
                     result["response"] = "fail"
                     result["error"] = str(exc)
                     result["execute_status"] = "fail"
+                    halted.append(schema_key)
 
                 output_file.write(json.dumps(result, ensure_ascii=False) + "\n")
                 output_file.flush()
-                print(f"[{idx + 1}/{len(rows)}] {result['execute_status']} - {question}")
+                print(f"[{trial}/{len(rows)}] {result['execute_status']} - {question}")
+                print(
+                    f"Finished Trial {trial}, Correct: {len(correct)}, "
+                    f"Incorrect: {len(incorrect)}, Halted: {len(halted)}"
+                )
 
     print(f"Saved results to {output_path}")
 

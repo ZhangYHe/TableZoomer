@@ -7,7 +7,7 @@ from actions.summarize import ThoughtSummary
 
 class AnswerFormatter(Role):
     """ Assistant to format and summarize answers. """
-    name: str = "TeleFormatter"
+    name: str = "TableZoomerFormatter"
     profile: str = "Answer Formatter"
     goal: str = "to format and summarize the final answer based on the thought process and results"
 

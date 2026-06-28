@@ -2,6 +2,7 @@ prompt_template:
   react: "prompts/react_prompt_en_v4.txt"
   table_desc: "prompts/table_desc_prompt_en_v3.txt"
   query_expansion: "prompts/query_refine_en_v1.txt"
+  question_rewrite: "prompts/question_rewrite_prompt.txt"
   code_generation: "prompts/code_generate_prompt_en_v11.txt"
   answer_summary: "prompts/final_answer_prompt_en_v5.txt"
 
