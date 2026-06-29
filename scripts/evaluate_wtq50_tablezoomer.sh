@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+cd "${PROJECT_ROOT}"
+
+if command -v conda >/dev/null 2>&1; then
+  eval "$(conda shell.bash hook)"
+  conda activate tablezoomer
+fi
+
+if [[ $# -gt 0 ]]; then
+  RESULT_PATH="$1"
+  EVAL_DIR="$(dirname "${RESULT_PATH}")"
+else
+  mkdir -p output
+  RESULT_PATH="$(find output -path "output/wtq50_*/results.jsonl" -type f | sort | tail -n 1)"
+  if [[ -z "${RESULT_PATH}" ]]; then
+    echo "No result file found under output/wtq50_*/results.jsonl" >&2
+    exit 1
+  fi
+  EVAL_DIR="$(dirname "${RESULT_PATH}")"
+fi
+
+mkdir -p "${EVAL_DIR}"
+
+python scripts/evaluate_wtq_official.py \
+  --dataset wtq \
+  --result_jsonl "${RESULT_PATH}" \
+  --tagged_dataset_path /home/zhangyunhe/nas/dataset/WikiTableQuestions/tagged/data \
+  --prediction_path "${EVAL_DIR}/predictions.tsv" \
+  --metrics_path "${EVAL_DIR}/metrics.json" \
+  --metrics_text_path "${EVAL_DIR}/metrics.txt" \
+  --details_path "${EVAL_DIR}/eval_details.jsonl" \
+  --summary_markdown_path "${EVAL_DIR}/eval_summary.md" \
+  > "${EVAL_DIR}/eval.log" 2>&1

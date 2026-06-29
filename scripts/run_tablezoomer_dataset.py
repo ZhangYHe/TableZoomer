@@ -201,7 +201,7 @@ def main() -> None:
                 trial = idx + 1
 
                 try:
-                    answer, log_item = agent.execute_qa(
+                    answer, _log_item = agent.execute_qa(
                         question,
                         table_file,
                         str(table_desc_file),
@@ -209,7 +209,6 @@ def main() -> None:
                     )
                     result["response"] = answer
                     result["pred_answer"] = answer
-                    result["log_item"] = log_item
                     result["execute_status"] = "success"
                     if "answer" in item:
                         if is_correct_answer(answer, item["answer"]):
