@@ -501,6 +501,23 @@ def deterministic_expand_cells_to_subtable(
     top_k_rows: int = 10,
     top_k_cols: int = 10,
 ) -> tuple[list[int], list[str]]:
+    expansion = deterministic_expand_cells_to_subtable_with_meta(
+        top_k_cells=top_k_cells,
+        rewrite_profile=rewrite_profile,
+        all_columns=all_columns,
+        top_k_rows=top_k_rows,
+        top_k_cols=top_k_cols,
+    )
+    return expansion["selected_rows"], expansion["selected_columns"]
+
+
+def deterministic_expand_cells_to_subtable_with_meta(
+    top_k_cells: list[dict[str, Any]],
+    rewrite_profile: dict[str, Any],
+    all_columns: list[str],
+    top_k_rows: int = 10,
+    top_k_cols: int = 10,
+) -> dict[str, Any]:
     target_cols = normalize_columns(rewrite_profile.get("target_columns", []), all_columns)
     constraint_cols = normalize_columns(rewrite_profile.get("constraint_columns", []), all_columns)
 
@@ -510,22 +527,26 @@ def deterministic_expand_cells_to_subtable(
         score = float(cell.get("score", 0.0))
         row_best_score[row_id] = max(row_best_score.get(row_id, 0.0), score)
 
-    selected_rows = sorted(
+    selected_rows_ranked = sorted(
         row_best_score.keys(),
         key=lambda row_id: (-row_best_score[row_id], row_id),
     )[:top_k_rows]
+    selected_rows = sorted(selected_rows_ranked)
 
     col_hit_count: defaultdict[str, int] = defaultdict(int)
     col_best_score: defaultdict[str, float] = defaultdict(float)
+    col_id_map: dict[str, int] = {str(col): idx for idx, col in enumerate(all_columns)}
     for cell in top_k_cells:
         col = str(cell["col_name"])
         score = float(cell.get("score", 0.0))
         col_hit_count[col] += 1
         col_best_score[col] = max(col_best_score[col], score)
+        if col not in col_id_map and "col_id" in cell:
+            col_id_map[col] = int(cell["col_id"])
 
     hit_cols = sorted(
         col_hit_count.keys(),
-        key=lambda col: (-col_hit_count[col], -col_best_score[col], all_columns.index(col) if col in all_columns else 10**9),
+        key=lambda col: (-col_hit_count[col], -col_best_score[col], col_id_map.get(col, 10**9)),
     )
 
     selected_columns = []
@@ -533,10 +554,45 @@ def deterministic_expand_cells_to_subtable(
         if col in all_columns and col not in selected_columns:
             selected_columns.append(col)
 
+    row_fallback = False
+    col_fallback = False
+    if not selected_rows:
+        row_fallback = True
+    selected_columns = selected_columns[:top_k_cols]
     if not selected_columns:
+        col_fallback = True
         selected_columns = [str(col) for col in all_columns[:top_k_cols]]
 
-    return selected_rows, selected_columns[:top_k_cols]
+    stats_cols = set(target_cols + constraint_cols + hit_cols + selected_columns)
+    column_stats = {}
+    for col in all_columns:
+        if col not in stats_cols:
+            continue
+        if col not in all_columns:
+            continue
+        column_stats[col] = {
+            "hit_count": int(col_hit_count.get(col, 0)),
+            "best_score": round(float(col_best_score.get(col, 0.0)), 6),
+            "col_id": int(col_id_map.get(col, all_columns.index(col))),
+            "is_target_column": col in target_cols,
+            "is_constraint_column": col in constraint_cols,
+            "selected": col in selected_columns,
+        }
+
+    return {
+        "selected_rows": selected_rows,
+        "selected_rows_ranked": selected_rows_ranked,
+        "selected_columns": selected_columns,
+        "row_scores": {str(row_id): round(float(score), 6) for row_id, score in sorted(row_best_score.items())},
+        "column_stats": column_stats,
+        "target_columns_normalized": target_cols,
+        "constraint_columns_normalized": constraint_cols,
+        "hit_columns_ranked": hit_cols,
+        "expansion_fallback": {
+            "row_fallback": row_fallback,
+            "column_fallback": col_fallback,
+        },
+    }
 
 
 def build_cell_guided_table_zoom(
@@ -546,15 +602,20 @@ def build_cell_guided_table_zoom(
     selected_columns: list[str],
     top_k_cells: list[dict[str, Any]] | None = None,
     fallback_rows: int = 10,
+    expansion_metadata: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     df = read_table(table_file)
     all_columns = [str(col) for col in df.columns.tolist()]
     selected_columns = [col for col in selected_columns if col in all_columns]
+    column_fallback = False
     if not selected_columns:
+        column_fallback = True
         selected_columns = all_columns[:10]
 
     valid_rows = [row for row in selected_rows if 0 <= row < len(df)]
+    row_fallback = False
     if not valid_rows:
+        row_fallback = True
         valid_rows = list(range(min(fallback_rows, len(df))))
 
     selected_df = df.iloc[valid_rows][selected_columns].copy()
@@ -565,6 +626,7 @@ def build_cell_guided_table_zoom(
 
     refined_table_schema = {
         "file_path": table_schema.get("file_path", table_file),
+        "table_id": table_schema.get("table_id", ""),
         "table_title": get_table_title(table_schema, table_file),
         "table_name": table_schema.get("table_name", os.path.basename(os.path.dirname(table_file))),
         "table_description": table_schema.get("table_description", table_schema.get("description", "")),
@@ -577,6 +639,17 @@ def build_cell_guided_table_zoom(
         ],
         "table_zoom": table_zoom,
         "evidence_cells": (top_k_cells or [])[:20],
+        "selected_rows": valid_rows,
+        "selected_columns": selected_columns,
+        "selected_rows_ranked": (expansion_metadata or {}).get("selected_rows_ranked", valid_rows),
+        "row_scores": (expansion_metadata or {}).get("row_scores", {}),
+        "column_stats": (expansion_metadata or {}).get("column_stats", {}),
+        "hit_columns_ranked": (expansion_metadata or {}).get("hit_columns_ranked", []),
+        "subtable_shape": [len(valid_rows), len(selected_columns)],
+        "expansion_fallback": {
+            "row_fallback": row_fallback or (expansion_metadata or {}).get("expansion_fallback", {}).get("row_fallback", False),
+            "column_fallback": column_fallback or (expansion_metadata or {}).get("expansion_fallback", {}).get("column_fallback", False),
+        },
     }
     return refined_table_schema, table_zoom
 

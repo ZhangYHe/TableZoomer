@@ -20,7 +20,7 @@ from actions.cell_retrieval import (
     build_cell_guided_table_zoom,
     build_or_load_cell_index,
     compute_compression_ratio,
-    deterministic_expand_cells_to_subtable,
+    deterministic_expand_cells_to_subtable_with_meta,
     get_table_title,
     merge_cell_results,
     read_table,
@@ -249,13 +249,15 @@ class TableZoomer():
         merged_top_cells = merge_cell_results(per_query_cells)
 
         all_columns = table_schema.get("column_list", [])
-        selected_rows, selected_columns = deterministic_expand_cells_to_subtable(
+        expansion_metadata = deterministic_expand_cells_to_subtable_with_meta(
             top_k_cells=merged_top_cells,
             rewrite_profile=rewrite_profile,
             all_columns=all_columns,
             top_k_rows=self.top_k_rows,
             top_k_cols=self.top_k_cols,
         )
+        selected_rows = expansion_metadata["selected_rows"]
+        selected_columns = expansion_metadata["selected_columns"]
 
         logger.info("1.3 Build cell-guided table_zoom...")
         refined_table_schema, _ = build_cell_guided_table_zoom(
@@ -265,15 +267,17 @@ class TableZoomer():
             selected_columns=selected_columns,
             top_k_cells=merged_top_cells,
             fallback_rows=self.top_k_rows,
+            expansion_metadata=expansion_metadata,
         )
 
         try:
             full_df = read_table(table_file)
+            subtable_shape = refined_table_schema.get("subtable_shape", [0, 0])
             compression_ratio = compute_compression_ratio(
                 total_rows=len(full_df),
                 total_cols=len(full_df.columns),
-                selected_rows=selected_rows,
-                selected_columns=selected_columns,
+                selected_rows=list(range(subtable_shape[0])),
+                selected_columns=list(range(subtable_shape[1])),
             )
         except Exception:
             compression_ratio = None
@@ -285,9 +289,14 @@ class TableZoomer():
             "search_queries": search_queries,
             "per_query_top_k_cells": per_query_cells,
             "merged_top_cells": merged_top_cells[:20],
-            "selected_rows": selected_rows,
-            "selected_columns": selected_columns,
-            "subtable_shape": [len(refined_table_schema.get("table_zoom", {}).get("rows", [])), len(selected_columns)],
+            "selected_rows": refined_table_schema.get("selected_rows", selected_rows),
+            "selected_rows_ranked": expansion_metadata.get("selected_rows_ranked", selected_rows),
+            "selected_columns": refined_table_schema.get("selected_columns", selected_columns),
+            "row_scores": expansion_metadata.get("row_scores", {}),
+            "column_stats": expansion_metadata.get("column_stats", {}),
+            "hit_columns_ranked": expansion_metadata.get("hit_columns_ranked", []),
+            "expansion_fallback": refined_table_schema.get("expansion_fallback", {}),
+            "subtable_shape": refined_table_schema.get("subtable_shape", [len(refined_table_schema.get("table_zoom", {}).get("rows", [])), len(selected_columns)]),
             "compression_ratio": compression_ratio,
         }
         if log_item is not None:
