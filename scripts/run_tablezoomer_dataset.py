@@ -228,7 +228,7 @@ def main() -> None:
                     f"[PROGRESS] {trial}/{len(rows)} "
                     f"status={result['execute_status']} "
                     f"correct={len(correct)} incorrect={len(incorrect)} halted={len(halted)} "
-                    f"acc={acc:.4f} question={question}",
+                    f"acc={acc:.4f}",
                     flush=True,
                 )
 

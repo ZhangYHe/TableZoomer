@@ -203,7 +203,9 @@ def save_cell_index_cache(
         ),
         "cell_items": cell_items,
     }
-    cache_path.write_text(json.dumps(cache_data, ensure_ascii=False), encoding="utf-8")
+    tmp_path = cache_path.with_name(f".{cache_path.name}.{os.getpid()}.tmp")
+    tmp_path.write_text(json.dumps(cache_data, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_path, cache_path)
     return cache_path
 
 
