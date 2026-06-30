@@ -223,10 +223,13 @@ def main() -> None:
 
                 output_file.write(json.dumps(result, ensure_ascii=False) + "\n")
                 output_file.flush()
-                print(f"[{trial}/{len(rows)}] {result['execute_status']} - {question}")
+                acc = len(correct) / trial if trial else 0.0
                 print(
-                    f"Finished Trial {trial}, Correct: {len(correct)}, "
-                    f"Incorrect: {len(incorrect)}, Halted: {len(halted)}"
+                    f"[PROGRESS] {trial}/{len(rows)} "
+                    f"status={result['execute_status']} "
+                    f"correct={len(correct)} incorrect={len(incorrect)} halted={len(halted)} "
+                    f"acc={acc:.4f} question={question}",
+                    flush=True,
                 )
 
     print(f"Saved results to {output_path}")

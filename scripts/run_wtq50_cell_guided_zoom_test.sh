@@ -28,6 +28,5 @@ python scripts/run_tablezoomer_dataset.py \
   --top_k_cells 20 \
   --top_k_rows 10 \
   --top_k_cols 10 \
-  --limit 2 \
   --output_path "${RUN_DIR}/results.jsonl" \
-  "$@" > "${RUN_DIR}/run.log" 2>&1
+  "$@" 2>&1 | tee "${RUN_DIR}/run.log" | grep --line-buffered -E '^\[PROGRESS\]|^Saved results'

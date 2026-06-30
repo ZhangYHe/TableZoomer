@@ -228,6 +228,18 @@ class TableZoomer():
         logger.info("1.1 Question rewrite for cell-guided zoom...")
         rewrite_profile, query_rsp = self.rewrite_question(query, table_schema, table_file)
         search_queries = self._cell_search_queries(query, rewrite_profile)
+        logger.info(f"[QUESTION_REWRITE] before: {query}")
+        logger.info(
+            "[QUESTION_REWRITE] after: "
+            + json.dumps(
+                {
+                    "cell_search_queries": search_queries,
+                    "target_columns": rewrite_profile.get("target_columns", []),
+                    "constraint_columns": rewrite_profile.get("constraint_columns", []),
+                },
+                ensure_ascii=False,
+            )
+        )
 
         logger.info("1.2 Build cell index and retrieve cells...")
         cell_items = build_or_load_cell_index(
