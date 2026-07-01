@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -85,6 +86,32 @@ def build_prompt(question: str, table_text: str) -> str:
         f"Question: {question}\n\n"
         "Answer the question based on the table. Output only the final answer."
     )
+
+
+def normalize_answer(value: object) -> str:
+    text = str(value).lower()
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"[^0-9a-z\u4e00-\u9fff.]+", " ", text)
+    return text.strip()
+
+
+def is_correct_answer(prediction: str, gold_answer: object) -> bool:
+    if gold_answer is None:
+        return False
+
+    if isinstance(gold_answer, list):
+        gold_values = gold_answer
+    else:
+        gold_values = [gold_answer]
+
+    gold_norms = [normalize_answer(value) for value in gold_values if normalize_answer(value)]
+    pred_norm = normalize_answer(prediction)
+    if not gold_norms or not pred_norm:
+        return False
+
+    if pred_norm in gold_norms:
+        return True
+    return all(gold in pred_norm for gold in gold_norms)
 
 
 def normalize_base_url(base_url: str) -> str:
@@ -212,6 +239,8 @@ def main() -> None:
     results: list[dict[str, Any] | None] = [None] * len(rows)
     completed = 0
     failed = 0
+    correct = 0
+    incorrect = 0
 
     print(
         f"Running direct LLM baseline: examples={len(rows)} workers={args.workers} "
@@ -241,9 +270,27 @@ def main() -> None:
             completed += 1
             if result.get("execute_status") != "success":
                 failed += 1
+                progress_result = "error"
+            elif "answer" in result:
+                progress_result = (
+                    "correct"
+                    if is_correct_answer(str(result.get("pred_answer", "")), result["answer"])
+                    else "incorrect"
+                )
+            else:
+                progress_result = "unknown"
+            if progress_result == "correct":
+                correct += 1
+            elif progress_result == "incorrect":
+                incorrect += 1
+            example_id = result.get("id") or f"row_{idx}"
+            acc = correct / completed if completed else 0.0
             print(
                 f"[PROGRESS] {completed}/{len(rows)} "
-                f"status={result.get('execute_status')} failed={failed}",
+                f"id={example_id} result={progress_result} "
+                f"status={result.get('execute_status')} "
+                f"correct={correct} incorrect={incorrect} failed={failed} "
+                f"acc={acc:.4f}",
                 flush=True,
             )
 

@@ -26,6 +26,79 @@ def extract_first_curly_braces(text):
     return match.group(0) if match else None
 
 
+def strip_json_fence(text):
+    text = text.strip()
+    if text.startswith("```json") and text.endswith("```"):
+        text = text[len("```json"):].strip()
+        text = text[:-3].strip()
+    elif text.startswith("```") and text.endswith("```"):
+        text = text[3:-3].strip()
+    return text
+
+
+def extract_balanced_json_object(text):
+    for start in (idx for idx, char in enumerate(text) if char == "{"):
+        candidate = _extract_balanced_json_object_from(text, start)
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def extract_balanced_json_objects(text):
+    candidates = []
+    for start in (idx for idx, char in enumerate(text) if char == "{"):
+        candidate = _extract_balanced_json_object_from(text, start)
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates
+
+
+def _extract_balanced_json_object_from(text, start):
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for idx in range(start, len(text)):
+        char = text[idx]
+        if escape_next:
+            escape_next = False
+            continue
+        if char == "\\" and in_string:
+            escape_next = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:idx + 1]
+    return None
+
+
+def normalize_json_response(text):
+    text = strip_json_fence(text)
+    text = extract_from_content(text).strip()
+    candidates = [text]
+    for balanced in extract_balanced_json_objects(text):
+        if balanced in candidates:
+            continue
+        candidates.append(balanced)
+
+    last_error = None
+    for candidate in candidates:
+        try:
+            json.loads(candidate)
+            return candidate, None
+        except Exception as error:
+            last_error = error
+    return text, last_error
+
+
 
 class SimpleWriteCode(Action):
     """ Generate efficient and robust Python code based on the user's query, analysis, and data file path """
@@ -47,43 +120,38 @@ class SimpleWriteCode(Action):
             prompt = prompt + '\n\n' + f'(Pay attention to Additional Information!!!:\n Table_zoom is streamlined information extracted by compressing rows and columns of the original table. Table_zoom:\n{table_zoom}\n\n In most cases, answers can be obtained by focusing only on the table_zoom, and more accurate code can be generated with reference to it.But it do not always contains all necessary information, please carefully check if its data is enough to solve current query, if not, please refer to origin table_schema for more details. )'
 
         rsp = await self._aask(prompt)
-        rsp = rsp.strip()
-        if rsp.startswith("```json") and rsp.endswith("```"):
-            rsp = rsp.replace('```json', '').strip()
-            rsp = rsp.replace('```', '')
-
-
-        rsp = extract_from_content(rsp)
-
-        rsp = extract_first_curly_braces(rsp)
-        #print("test_rsp:", rsp)
-        # check of output format
-        try:
-            format_rsp = json.loads(rsp)
-        except Exception as e:
-            logger.info(f'{self.name}: error! The generated response does not comply with JSON syntax: \n{e}\nReflection and try again!')
+        rsp, parse_error = normalize_json_response(rsp)
+        if parse_error is not None:
+            logger.info(f'{self.name}: error! The generated response does not comply with JSON syntax: \n{parse_error}\nReflection and try again!')
             json_error_fix_request = f"""---- \
 In the previous round, the response you output was:
 
 {rsp}
 
 Unfortunately, this response failed to load by `json.loads()`, indicating that your response did not follow the JSON format requirements. The error type is:
-{e}
+{parse_error}
 ----
 
-Please check for errors in your response and answer again strictly following the above guidelines. Output the correct answer after reflection without additional explanation. 
+Please fix the format and answer again with exactly one valid JSON object and nothing else.
+Requirements:
+1. The response must be loadable by Python `json.loads(response)`.
+2. Use double quotes for JSON keys and string values.
+3. Include exactly two keys: "code_thought" and "code".
+4. Put the complete Python program inside the "code" JSON string.
+5. Escape newlines as `\\n`, internal double quotes as `\\"`, and literal backslashes as `\\\\`.
+6. Do not use Markdown fences, Python dict syntax, comments outside JSON, or any explanatory text outside JSON.
+7. Do not output standalone brace fragments from Python code such as `{missing_cols}` outside the "code" string.
 
 **User Query**: {instruction['query']}
 **Response**: """
             prompt = prompt + '\n\n' + json_error_fix_request
             rsp = await self._aask(prompt)
-            rsp = rsp.strip()
-            if rsp.startswith("```json") and rsp.endswith("```"):
-                rsp = rsp.replace('```json', '').strip()
-                rsp = rsp.replace('```', '')
+            rsp, parse_error = normalize_json_response(rsp)
+            if parse_error is not None:
+                logger.warning(f'{self.name}: retry response still does not comply with JSON syntax: {parse_error}')
 
         # return json.dumps(rsp, ensure_ascii=False)
-        return json.dumps({"prompt": prompt, "rsp": extract_from_content(rsp)}, ensure_ascii=False)
+        return json.dumps({"prompt": prompt, "rsp": rsp}, ensure_ascii=False)
 
 
 class SimpleRunCode(Action):

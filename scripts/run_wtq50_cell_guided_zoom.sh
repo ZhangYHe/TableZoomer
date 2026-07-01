@@ -14,7 +14,7 @@ fi
 export METAGPT_PROJECT_ROOT="${METAGPT_PROJECT_ROOT:-${HOME}/.metagpt/tablezoomer_runtime}"
 
 WORKERS="${WORKERS:-4}"
-DATASET_PATH="${DATASET_PATH:-output/wtq_test_random_50.jsonl}"
+DATASET_PATH="/home/zhangyunhe/nas/code/table/TableZoomer/output/wtq_test_random_50_error.jsonl"
 RUN_DIR="output/wtq50_$(date +%m%d%H%M)"
 SHARD_DIR="${RUN_DIR}/shards"
 

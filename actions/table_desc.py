@@ -30,6 +30,28 @@ from metagpt.schema import Message
 
 from actions.query_analyse import extract_from_content
 
+
+def read_table_dataframe(table_path):
+    table_path_lower = str(table_path).lower()
+    if table_path_lower.endswith('csv'):
+        read_attempts = [
+            {"encoding": "utf8", "escapechar": "\\"},
+            {"encoding": "utf8"},
+            {"encoding": "utf8", "engine": "python", "escapechar": "\\"},
+            {"encoding": "utf8", "engine": "python"},
+        ]
+        last_error = None
+        for kwargs in read_attempts:
+            try:
+                return pd.read_csv(table_path, **kwargs)
+            except Exception as error:
+                last_error = error
+        raise last_error
+    if table_path_lower.endswith(('xlsx', 'xls')):
+        return pd.read_excel(table_path)
+    raise ValueError(f'Unsupported table format: {table_path}')
+
+
 def longest_common_subsequence(text1: str, text2: str) -> int:
     m, n = len(text1), len(text2)
     dp = [[0] * (n + 1) for _ in range(m + 1)]
@@ -134,10 +156,7 @@ def table_zoom(table_schema, relevant_column_list, row_match_list):
             if col in table_schema['column_list']:
                 logger.info(f'EntityLinking: Retrieve all values of `{col}` column')
                 file_path = table_schema['file_path']
-                if file_path.endswith('csv'):
-                    df = pd.read_csv(file_path, encoding='utf8')
-                elif file_path.endswith('xlsx'):
-                    df = pd.read_excel(file_path)
+                df = read_table_dataframe(file_path)
 
                 column_ele_list = list(df[col].value_counts().keys())
 
@@ -164,10 +183,7 @@ def table_zoom(table_schema, relevant_column_list, row_match_list):
 
     # load origin data
     file_path = table_schema['file_path']
-    if file_path.endswith('csv'):
-        full_df = pd.read_csv(file_path, encoding='utf8')
-    elif file_path.endswith('xlsx'):
-        full_df = pd.read_excel(file_path)
+    full_df = read_table_dataframe(file_path)
 
     mask = pd.Series(True, index=full_df.index)
 
@@ -243,10 +259,7 @@ def get_refined_table_schema(table_schema, relevant_column_list, type, row_match
         
         # step 2: Update detailed information about the relevant columns -- column_description
         file_name = table_schema['file_path']
-        if file_name.endswith('csv'):
-            df = pd.read_csv(file_name, encoding='utf8')
-        elif file_name.endswith('xlsx'):
-            df = pd.read_excel(file_name)
+        df = read_table_dataframe(file_name)
         
         new_column_description = refined_table_schema['column_description']
         for i, each_column_desc in enumerate(refined_table_schema['column_description']):
@@ -290,10 +303,7 @@ def get_refined_table_schema(table_schema, relevant_column_list, type, row_match
         print(f'Table Schema Refine Error!!\n {e}')
         # Read the table and retrieve it again
         file_name = table_schema['file_path']
-        if file_name.endswith('csv'):
-            df = pd.read_csv(file_name, encoding='utf8')
-        elif file_name.endswith('xlsx'):
-            df = pd.read_excel(file_name)
+        df = read_table_dataframe(file_name)
         columns_list = [c for c in df.columns.tolist() if c in relevant_column_list]
         # Update column_list, cell_example
         refined_table_schema['column_list'] = columns_list
@@ -345,11 +355,7 @@ class TableDesc(Action):
         table_item = ast.literal_eval(table_item)
         # table_item = json.loads(table_item)
         table_path, desc_save_path = table_item['table_file'], table_item['desc_save_path']
-        df = None
-        if table_path.endswith('csv'):
-            df = pd.read_csv(table_path, encoding='utf8')
-        elif table_path.endswith('xlsx'):
-            df = pd.read_excel(table_path)
+        df = read_table_dataframe(table_path)
         print('1. Read table schema....')
         table_schema = get_table_schema(df)
         print('2. Request LLM...')
@@ -442,5 +448,3 @@ class TableDesc(Action):
             save_dicts_to_json(table_desc, desc_save_path)
         
         return json.dumps(table_desc, ensure_ascii=False)
-
-

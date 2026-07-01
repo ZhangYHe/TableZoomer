@@ -84,6 +84,8 @@ class TableZoomer():
             os.path.join(CUR_ROOT, 'prompts', 'question_rewrite_prompt.txt')
         )
         self.question_rewrite_prompt = open(question_rewrite_path, 'r', encoding='utf8').read()
+        self.dataset_reasoning_hints = self._load_dataset_reasoning_hints()
+        self._append_dataset_reasoning_hints()
         
         # llm settings  of different module.
         self.react_llm_config = Config.from_yaml_file(Path(os.path.join(CUR_ROOT, 'agent_config', yaml_config['llm_config']['react'])))
@@ -91,6 +93,43 @@ class TableZoomer():
         self.query_llm_config = Config.from_yaml_file(Path(os.path.join(CUR_ROOT, 'agent_config', yaml_config['llm_config']['query_expansion'])))
         self.code_llm_config = Config.from_yaml_file(Path(os.path.join(CUR_ROOT, 'agent_config', yaml_config['llm_config']['code_generation'])))
         self.summary_llm_config = Config.from_yaml_file(Path(os.path.join(CUR_ROOT, 'agent_config', yaml_config['llm_config']['answer_summary'])))
+
+    def _load_dataset_reasoning_hints(self):
+        if str(self.task).lower() != "wtq":
+            return ""
+
+        hint_path = Path(CUR_ROOT) / "prompts" / "dataset_hints" / "wtq_reasoning_hints.txt"
+        if not hint_path.is_file():
+            logger.warning(f"WTQ reasoning hints file not found: {hint_path}")
+            return ""
+        return hint_path.read_text(encoding="utf8").strip()
+
+    def _append_dataset_reasoning_hints(self):
+        if not self.dataset_reasoning_hints:
+            return
+
+        self.code_generate_prompt = self._insert_reasoning_hints(
+            self.code_generate_prompt,
+            "### Let's begin!",
+        )
+        self.react_prompt = self._insert_reasoning_hints(
+            self.react_prompt,
+            "**Task**:",
+        )
+        self.question_rewrite_prompt = self._insert_reasoning_hints(
+            self.question_rewrite_prompt,
+            "Question:",
+        )
+        self.answer_summary_prompt = self._insert_reasoning_hints(
+            self.answer_summary_prompt,
+            "### Tabel Schema",
+        )
+
+    def _insert_reasoning_hints(self, prompt, marker):
+        hint_block = "\n\n" + self.dataset_reasoning_hints.strip() + "\n\n"
+        if marker in prompt:
+            return prompt.replace(marker, hint_block + marker, 1)
+        return prompt.rstrip() + hint_block
 
     def _init_table_desc(self, table_file, table_schema_path=None, table_id=None):
         logger.info(f'0. Generate table description.')

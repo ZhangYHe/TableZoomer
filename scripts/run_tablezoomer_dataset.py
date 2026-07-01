@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -129,7 +130,49 @@ def normalize_answer(value: object) -> str:
     return text.strip()
 
 
-def is_correct_answer(prediction: str, gold_answer: object) -> bool:
+def wtq_tsv_escape(value: object) -> str:
+    return str(value).replace("\\", r"\\").replace("\n", r"\n").replace("|", r"\p")
+
+
+def wtq_tsv_unescape(value: str) -> str:
+    return value.replace(r"\n", "\n").replace(r"\p", "|").replace(r"\\", "\\")
+
+
+def parse_prediction_items(prediction: object) -> list[object]:
+    if prediction is None:
+        return []
+    if isinstance(prediction, (list, tuple)):
+        return list(prediction)
+    if not isinstance(prediction, str):
+        return [prediction]
+
+    text = prediction.strip()
+    if not text:
+        return []
+
+    if text.startswith("[") and text.endswith("]"):
+        for parser in (ast.literal_eval, json.loads):
+            try:
+                parsed = parser(text)
+            except Exception:
+                continue
+            if isinstance(parsed, (list, tuple)):
+                return list(parsed)
+
+    if "|" in text:
+        return [wtq_tsv_unescape(item) for item in text.split("|")]
+
+    return [prediction]
+
+
+def normalize_prediction_for_wtq(prediction: object) -> str:
+    items = parse_prediction_items(prediction)
+    if not items:
+        return ""
+    return "|".join(wtq_tsv_escape(item) for item in items)
+
+
+def is_correct_answer(prediction: object, gold_answer: object) -> bool:
     if gold_answer is None:
         return False
 
@@ -139,10 +182,15 @@ def is_correct_answer(prediction: str, gold_answer: object) -> bool:
         gold_values = [gold_answer]
 
     gold_norms = [normalize_answer(value) for value in gold_values if normalize_answer(value)]
-    pred_norm = normalize_answer(prediction)
-    if not gold_norms or not pred_norm:
+    pred_values = parse_prediction_items(prediction)
+    pred_norms = [normalize_answer(value) for value in pred_values if normalize_answer(value)]
+    if not gold_norms or not pred_norms:
         return False
 
+    if len(pred_norms) > 1 or len(gold_norms) > 1:
+        return set(pred_norms) == set(gold_norms)
+
+    pred_norm = pred_norms[0]
     if pred_norm in gold_norms:
         return True
     return all(gold in pred_norm for gold in gold_norms)
@@ -199,6 +247,7 @@ def main() -> None:
                 table_desc_file = schema_dir / f"{schema_key}.json"
                 result = dict(item)
                 trial = idx + 1
+                progress_result = "unknown"
 
                 try:
                     answer, _log_item = agent.execute_qa(
@@ -208,24 +257,28 @@ def main() -> None:
                         table_id=item.get("table_id"),
                     )
                     result["response"] = answer
-                    result["pred_answer"] = answer
+                    result["pred_answer"] = normalize_prediction_for_wtq(answer)
                     result["execute_status"] = "success"
                     if "answer" in item:
-                        if is_correct_answer(answer, item["answer"]):
+                        if is_correct_answer(result["pred_answer"], item["answer"]):
                             correct.append(schema_key)
+                            progress_result = "correct"
                         else:
                             incorrect.append(schema_key)
+                            progress_result = "incorrect"
                 except Exception as exc:
                     result["response"] = "fail"
                     result["error"] = str(exc)
                     result["execute_status"] = "fail"
                     halted.append(schema_key)
+                    progress_result = "error"
 
                 output_file.write(json.dumps(result, ensure_ascii=False) + "\n")
                 output_file.flush()
                 acc = len(correct) / trial if trial else 0.0
                 print(
                     f"[PROGRESS] {trial}/{len(rows)} "
+                    f"id={schema_key} result={progress_result} "
                     f"status={result['execute_status']} "
                     f"correct={len(correct)} incorrect={len(incorrect)} halted={len(halted)} "
                     f"acc={acc:.4f}",

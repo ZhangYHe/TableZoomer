@@ -15,13 +15,8 @@ if [[ $# -gt 0 ]]; then
   RESULT_PATH="$1"
   EVAL_DIR="$(dirname "${RESULT_PATH}")"
 else
-  mkdir -p output
-  RESULT_PATH="$(find output -path "output/wtq50_*/results.jsonl" -type f | sort | tail -n 1)"
-  if [[ -z "${RESULT_PATH}" ]]; then
-    echo "No result file found under output/wtq50_*/results.jsonl" >&2
-    exit 1
-  fi
-  EVAL_DIR="$(dirname "${RESULT_PATH}")"
+  echo "No result file found" >&2
+  exit 1
 fi
 
 mkdir -p "${EVAL_DIR}"

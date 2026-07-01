@@ -41,13 +41,22 @@ print('Answer Description:', answer)
 - Note that "Answer Description" is just the placeholder in the code. You should replce it with a entity name or a specific description derived from the user's input, as short as possible. Note that when single quotes are included in the answer description, please use double slashes: `print('Alice\\'s score')`
 
 ### Output Format
-Ensure the output is a compact, valid JSON object **without any additional explanations, comments, line breaks, or spaces**. As follows:
+Your entire response must be exactly one valid JSON object and nothing else.
+- Do not use Markdown fences such as ```json.
+- Do not add explanations, comments, prefixes, suffixes, or natural-language text outside the JSON object.
+- Use double quotes for all JSON keys and JSON string values. Never use Python dict syntax or single-quoted JSON keys.
+- The object must contain exactly these two keys: "code_thought" and "code".
+- The Python program must be stored as a JSON string value in "code"; escape all newline characters as `\n`, all internal double quotes as `\"`, and all literal backslashes as `\\`.
+- If the Python code contains braces, such as f-strings (`f"...{value}..."`) or dictionaries, keep them inside the escaped "code" string. Do not output any extra standalone `{...}` fragments outside the JSON object.
+- Before responding, mentally verify that Python `json.loads(response)` will succeed.
+
+Required JSON shape:
 {
     "code_thought": "Detailed ideas for query analysis, table data parsing and code generation. ",
     "code": "import pandas as pd\n# Efficient and robust Python code here\nprint('Answer Description:', answer)"
 }
 
-Please check the standardization of the JSON format of your response, and make sure it can be loadable by Python `json.loads()`!
+If you are unsure whether a character needs escaping, rewrite the Python code to use single quotes inside the code string where possible, and still ensure the final response is loadable by Python `json.loads()`!
 
 #### Examples
 **User Qeury**: What are the top three locations with the highest population density, and how do their population changes from 2006 to 2011 compare?
